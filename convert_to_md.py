@@ -45,6 +45,30 @@ def table_to_markdown(table):
     return rows_to_markdown_table(rows)
 
 
+def is_blank(value):
+    return value is None or str(value).strip() == ""
+
+
+def is_table_reliable(table):
+    if len(table) < 2:
+        return False
+    cells = [c for row in table for c in row]
+    if not cells:
+        return False
+
+    empty = sum(1 for c in cells if is_blank(c))
+    if (empty / len(cells)) > 0.25:
+        return False
+
+    header, data_rows = table[0], table[1:]
+    for col in range(len(header)):
+        values = [row[col] for row in data_rows if col < len(row)]
+        if values and all(is_blank(v) for v in values):
+            return False
+
+    return True
+
+
 def pdf_to_markdown(path):
     import pdfplumber
 
@@ -58,11 +82,14 @@ def pdf_to_markdown(path):
                 if text:
                     parts.append(text)
 
-                tables = region.extract_tables()
-                for i, table in enumerate(tables, start=1):
+                table_count = 0
+                for table in region.extract_tables():
+                    if not is_table_reliable(table):
+                        continue
                     md_table = table_to_markdown(table)
                     if md_table:
-                        parts.append(f"**표 {i}**\n\n{md_table}")
+                        table_count += 1
+                        parts.append(f"**표 {table_count}**\n\n{md_table}")
 
     return "\n\n".join(parts).strip() + "\n"
 
