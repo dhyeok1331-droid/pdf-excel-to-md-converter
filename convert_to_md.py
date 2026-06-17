@@ -53,17 +53,57 @@ def pdf_to_markdown(path):
         for page_num, page in enumerate(pdf.pages, start=1):
             parts.append(f"## Page {page_num}\n")
 
-            text = (page.extract_text() or "").strip()
-            if text:
-                parts.append(text)
+            for region in split_columns(page):
+                text = (region.extract_text() or "").strip()
+                if text:
+                    parts.append(text)
 
-            tables = page.extract_tables()
-            for i, table in enumerate(tables, start=1):
-                md_table = table_to_markdown(table)
-                if md_table:
-                    parts.append(f"**표 {i}**\n\n{md_table}")
+                tables = region.extract_tables()
+                for i, table in enumerate(tables, start=1):
+                    md_table = table_to_markdown(table)
+                    if md_table:
+                        parts.append(f"**표 {i}**\n\n{md_table}")
 
     return "\n\n".join(parts).strip() + "\n"
+
+
+def detect_column_split(page):
+    words = page.extract_words()
+    if not words:
+        return None
+
+    width = page.width
+    lo, hi = width * 0.25, width * 0.75
+    intervals = sorted(
+        (w["x0"], w["x1"]) for w in words if w["x1"] > lo and w["x0"] < hi
+    )
+
+    gaps = []
+    prev_end = lo
+    for x0, x1 in intervals:
+        if x0 > prev_end:
+            gaps.append((prev_end, x0))
+        prev_end = max(prev_end, x1)
+    if hi > prev_end:
+        gaps.append((prev_end, hi))
+
+    min_gap = width * 0.03
+    candidates = [g for g in gaps if g[1] - g[0] >= min_gap]
+    if not candidates:
+        return None
+
+    best = max(candidates, key=lambda g: g[1] - g[0])
+    return (best[0] + best[1]) / 2
+
+
+def split_columns(page):
+    split_x = detect_column_split(page)
+    if split_x is None:
+        return [page]
+    return [
+        page.crop((0, 0, split_x, page.height)),
+        page.crop((split_x, 0, page.width, page.height)),
+    ]
 
 
 def excel_to_markdown(path):
